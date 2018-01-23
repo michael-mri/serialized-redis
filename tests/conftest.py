@@ -3,8 +3,6 @@ from unittest.mock import Mock
 import pytest
 import redis
 
-from serialized_redis import SerializedRedis
-
 _REDIS_VERSIONS = {}
 
 
@@ -13,7 +11,7 @@ def get_version(**kwargs):
     params.update(kwargs)
     key = '%s:%s' % (params['host'], params['port'])
     if key not in _REDIS_VERSIONS:
-        client = SerializedRedis(**params)
+        client = redis.StrictRedis(**params)
         _REDIS_VERSIONS[key] = client.info()['redis_version']
         client.connection_pool.disconnect()
     return _REDIS_VERSIONS[key]
@@ -42,11 +40,6 @@ def skip_if_server_version_lt(min_version):
 def skip_if_server_version_gte(min_version):
     check = StrictVersion(get_version()) >= StrictVersion(min_version)
     return pytest.mark.skipif(check, reason="")
-
-
-@pytest.fixture()
-def r(request, **kwargs):
-    return _get_client(SerializedRedis, request, **kwargs)
 
 
 def _gen_cluster_mock_resp(r, response):

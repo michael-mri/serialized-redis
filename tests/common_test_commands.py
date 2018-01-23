@@ -1,35 +1,13 @@
-import binascii
 import datetime
 import pytest
-import time
+
 from redis import exceptions
-from redis._compat import (unichr, u, b, ascii_letters, iteritems, iterkeys,
-                           itervalues)
-from redis.client import parse_info
+from redis._compat import unichr, u, iteritems, iterkeys, itervalues
 import redis
-from .conftest import skip_if_server_version_lt, skip_if_server_version_gte
 
+from serialized_redis import SerializedRedis
 
-@pytest.fixture()
-def slowlog(request, r):
-    current_config = r.config_get()
-    old_slower_than_value = current_config['slowlog-log-slower-than']
-    old_max_legnth_value = current_config['slowlog-max-len']
-
-    def cleanup():
-        r.config_set('slowlog-log-slower-than', old_slower_than_value)
-        r.config_set('slowlog-max-len', old_max_legnth_value)
-
-    request.addfinalizer(cleanup)
-
-    r.config_set('slowlog-log-slower-than', 0)
-    r.config_set('slowlog-max-len', 128)
-
-
-def redis_server_time(client):
-    seconds, milliseconds = client.time()
-    timestamp = float('%s.%s' % (seconds, milliseconds))
-    return datetime.datetime.fromtimestamp(timestamp)
+from .conftest import skip_if_server_version_lt, skip_if_server_version_gte, _get_client
 
 
 class TestRedisCommands(object):
@@ -49,7 +27,8 @@ class TestRedisCommands(object):
         assert r.get('a') is None
         # byte_string = b('value')
         integer = 5
-        unicode_string = unichr(3456) + u('abcd') + unichr(3421)
+        # unicode_string = unichr(3456) + u('abcd') + unichr(3421)
+        unicode_string = u'abcdééééé'
         obj = {'list': [1, 2, 3, 'four'], 'int_value': 1, 'dict': dict(a='a', b=2), 'strvalue': 'str'}
         # assert r.set('byte_string', byte_string)
         assert r.set('integer', 5)
@@ -57,6 +36,7 @@ class TestRedisCommands(object):
         assert r.set('obj', obj)
         # assert r.get('byte_string') == byte_string
         assert r.get('integer') == integer
+        print(r.get('unicode_string'), unicode_string)
         assert r.get('unicode_string') == unicode_string
         assert r.get('obj') == obj
 
@@ -263,7 +243,8 @@ class TestRedisCommands(object):
     def test_blpop(self, r):
         r.rpush('a', '1', '2')
         r.rpush('b', '3', '4')
-        assert r.blpop(['b', 'a'], timeout=1) == ('b', '3')
+        t = r.blpop(['b', 'a'], timeout=1)
+        assert t == ('b', '3')
         assert r.blpop(['b', 'a'], timeout=1) == ('b', '4')
         assert r.blpop(['b', 'a'], timeout=1) == ('a', '1')
         assert r.blpop(['b', 'a'], timeout=1) == ('a', '2')
@@ -408,18 +389,18 @@ class TestRedisCommands(object):
 
     @skip_if_server_version_lt('2.8.0')
     def test_sscan(self, r):
-        r.sadd('a', 1, 2, 3)
+        r.sadd('a', 1, '2', 3)
         cursor, members = r.sscan('a')
         assert cursor == 0
-        assert set(members) == set(['1', '2', '3'])
-        _, members = r.sscan('a', match='1')
-        assert set(members) == set(['1'])
+        assert set(members) == set([1, '2', 3])
+        _, members = r.sscan('a', match=1)
+        assert set(members) == set([1])
 
     @skip_if_server_version_lt('2.8.0')
     def test_sscan_iter(self, r):
-        r.sadd('a', 1, 2, 3)
+        r.sadd('a', '1', 2, '3')
         members = list(r.sscan_iter('a'))
-        assert set(members) == set(['1', '2', '3'])
+        assert set(members) == set(['1', 2, '3'])
         members = list(r.sscan_iter('a', match='1'))
         assert set(members) == set(['1'])
 
