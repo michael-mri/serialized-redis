@@ -45,7 +45,6 @@ class SerializedRedis(redis.StrictRedis):
 
     def decode(self, value):
         "Return a unicode string from the byte representation"
-        print('------------->', value, type(value))
         if isinstance(value, bytes):
             value = value.decode()
         elif isinstance(value, list):
@@ -370,3 +369,27 @@ class PickleSerializedRedis(SerializedRedis):
         # for number comparison, force alpha to True
         return super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=True, store=store, groups=groups)
 
+
+class MsgpackSerializedRedis(SerializedRedis):
+
+    def __init__(self, *args, **kwargs):
+        import msgpack
+        import functools
+        deserialize_fct = functools.partial(msgpack.unpackb, encoding='utf-8')
+        super().__init__(*args, serialize_fct=msgpack.dumps, deserialize_fct=deserialize_fct, **kwargs)
+
+    def incr(self, name, amount=1):
+        raise NotImplementedError('Operation not supported with msgpack serializer')
+
+    def incrbyfloat(self, name, amount=1.0):
+        raise NotImplementedError('Operation not supported with pickle serializer')
+
+    def sort(self, name, start=None, num=None, by=None, get=None,
+        desc=False, alpha=False, store=None, groups=False):
+        # once pickled aplha order seems respected for numbers but not for pickled strings
+        if alpha:
+            raise NotImplementedError('Server side string comparison not supported with pickle serializer')
+        if by is not None:
+            raise NotImplementedError('Server side string comparison using weights with pickle serializer')
+        # for number comparison, force alpha to True
+        return super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=True, store=store, groups=groups)

@@ -27,8 +27,7 @@ class TestRedisCommands(object):
         assert r.get('a') is None
         # byte_string = b('value')
         integer = 5
-        # unicode_string = unichr(3456) + u('abcd') + unichr(3421)
-        unicode_string = u'abcdééééé'
+        unicode_string = unichr(3456) + u('abcd') + unichr(3421)
         obj = {'list': [1, 2, 3, 'four'], 'int_value': 1, 'dict': dict(a='a', b=2), 'strvalue': 'str'}
         # assert r.set('byte_string', byte_string)
         assert r.set('integer', 5)
