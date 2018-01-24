@@ -5,3 +5,7 @@ __pycache__
 *.pyc
 .coverage
 cover/
+serialized_redis_interface.egg-info
+build/
+dist/
+
