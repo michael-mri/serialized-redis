@@ -1,6 +1,6 @@
 import pytest
 from serialized_redis import PickleSerializedRedis
-from tests import common_test_commands
+from tests import common_commands_tests, common_pubsub_tests, common_pipeline_tests
 from .conftest import _get_client
 
 
@@ -9,7 +9,7 @@ def r(request, **kwargs):
     return _get_client(PickleSerializedRedis, request, **kwargs)
 
 
-class TestPickleSerializedRedis(common_test_commands.TestRedisCommands):
+class TestRedisCommands(common_commands_tests.TestRedisCommands):
 
     def test_incr(self, r):
         with pytest.raises(NotImplementedError):
@@ -38,4 +38,24 @@ class TestPickleSerializedRedis(common_test_commands.TestRedisCommands):
 
     def test_sort_all_options(self, r):
         pass
+
+
+class TestPubSubMessages(common_pubsub_tests.TestPubSubMessages):
+    pass
+
+
+class TestPubSubPubSubSubcommands(common_pubsub_tests.TestPubSubPubSubSubcommands):
+        pass
+
+
+class TestPubSubRedisDown(common_pubsub_tests.TestPubSubRedisDown):
+    pass
+
+
+class TestPubSubSubscribeUnsubscribe(common_pubsub_tests.TestPubSubSubscribeUnsubscribe):
+    pass
+
+
+class TestPipeline(common_pipeline_tests.TestPipeline):
+    pass
 

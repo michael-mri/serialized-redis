@@ -1,6 +1,6 @@
 from json import JSONEncoder, JSONDecoder
 
-from redis.client import string_keys_to_dict, dict_merge, StrictRedis
+from redis.client import string_keys_to_dict, dict_merge
 import redis
 
 
@@ -9,11 +9,11 @@ class SerializedRedis(redis.StrictRedis):
         Wrapper to Redis that De/Serializes all values.
     '''
 
-    def __init__(self, *args, serialize_fct, deserialize_fct, **kwargs):
+    def __init__(self, *args, serialize_fn, deserialize_fn, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self._serialize = serialize_fct
-        self._deserialize = deserialize_fct
+        self.serialize_fn = serialize_fn
+        self.deserialize_fn = deserialize_fn
 
         # Chain response callbacks to deserialize output
         FROM_SERIALIZED_CALLBACKS = dict_merge(
@@ -27,6 +27,10 @@ class SerializedRedis(redis.StrictRedis):
                 string_keys_to_dict('ZRANGE ZRANGEBYSCORE ZREVRANGE ZREVRANGEBYSCORE', self.parse_zrange),
                 string_keys_to_dict('ZSCAN', self.parse_zscan),
                 string_keys_to_dict('BLPOP BRPOP', self.parse_bpop),
+                {
+                    'PUBSUB CHANNELS': self.decode,
+                    'PUBSUB NUMSUB': self.decode,
+                },
         )
 
         for cmd in FROM_SERIALIZED_CALLBACKS:
@@ -36,12 +40,12 @@ class SerializedRedis(redis.StrictRedis):
                 self.response_callbacks[cmd] = FROM_SERIALIZED_CALLBACKS[cmd]
 
     def serialize(self, value):
-        return self._serialize(value)
+        return self.serialize_fn(value)
 
     def deserialize(self, value):
         if value is None or value is '':
             return value
-        return self._deserialize(value)
+        return self.deserialize_fn(value)
 
     def decode(self, value):
         "Return a unicode string from the byte representation"
@@ -50,7 +54,7 @@ class SerializedRedis(redis.StrictRedis):
         elif isinstance(value, list):
             return [self.decode(v) for v in value]
         elif isinstance(value, tuple):
-            return (self.decode(v) for v in value)
+            return tuple(self.decode(v) for v in value)
         elif isinstance(value, dict):
             return {k:self.decode(v) for k, v in value.items()}
         return value
@@ -305,6 +309,17 @@ class SerializedRedis(redis.StrictRedis):
         return super().publish(channel, self.serialize(msg))
 
     def pipeline(self, transaction=True, shard_hint=None):
+        serialize_fn = self.serialize_fn
+
+        # create a Pipeline class based on our class and provide our serialize function
+        # deserialize not required as it is called only form response_callbacks which
+        # refer to current SerializedRedis instance
+        class SerializedRedisPipeline(redis.client.BasePipeline, type(self)):
+            "Pipeline for the SerializedRedis class"
+
+            def serialize_fn(self, value):
+                return serialize_fn(value)
+
         return SerializedRedisPipeline(
             self.connection_pool,
             self.response_callbacks,
@@ -312,10 +327,30 @@ class SerializedRedis(redis.StrictRedis):
             shard_hint
         )
 
+    def pubsub(self, **kwargs):
+        return PubSub(self.connection_pool, serialized_redis=self, **kwargs)
 
-class SerializedRedisPipeline(redis.client.BasePipeline, SerializedRedis):
-    "Pipeline for the SerializedRedis class"
-    pass
+
+class PubSub(redis.client.PubSub):
+
+    def __init__(self, *args, serialized_redis, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.serialized_redis = serialized_redis
+
+    def handle_message(self, response, ignore_subscribe_messages=False):
+        response[0] = self.serialized_redis.decode(response[0])
+        response[1] = self.serialized_redis.decode(response[1])
+        response_type = response[0]
+        if response_type == 'pmessage':
+            response[2] = self.serialized_redis.decode(response[2])
+            response[3] = self.serialized_redis.deserialize(response[3])
+        elif response_type == 'message':
+            response[2] = self.serialized_redis.deserialize(response[2])
+        return super().handle_message(response, ignore_subscribe_messages=ignore_subscribe_messages)
+
+    def _normalize_keys(self, data):
+        # We only treat str...
+        return data
 
 
 def chain_functions(innerFn, *outerFns):
@@ -339,7 +374,7 @@ class JSONSerializedRedis(SerializedRedis):
     def __init__(self, *args, **kwargs):
         import json
         serialize_fct = json.JSONEncoder(sort_keys=True).encode
-        super().__init__(*args, serialize_fct=serialize_fct, deserialize_fct=json.loads, decode_responses=True, **kwargs)
+        super().__init__(*args, serialize_fn=serialize_fct, deserialize_fn=json.loads, decode_responses=True, **kwargs)
 
 
 class PickleSerializedRedis(SerializedRedis):
@@ -351,7 +386,7 @@ class PickleSerializedRedis(SerializedRedis):
 
     def __init__(self, *args, **kwargs):
         import pickle
-        super().__init__(*args, serialize_fct=pickle.dumps, deserialize_fct=pickle.loads, **kwargs)
+        super().__init__(*args, serialize_fn=pickle.dumps, deserialize_fn=pickle.loads, **kwargs)
 
     def incr(self, name, amount=1):
         raise NotImplementedError('Operation not supported with pickle serializer')
@@ -376,7 +411,7 @@ class MsgpackSerializedRedis(SerializedRedis):
         import msgpack
         import functools
         deserialize_fct = functools.partial(msgpack.unpackb, encoding='utf-8')
-        super().__init__(*args, serialize_fct=msgpack.dumps, deserialize_fct=deserialize_fct, **kwargs)
+        super().__init__(*args, serialize_fn=msgpack.dumps, deserialize_fn=deserialize_fct, **kwargs)
 
     def incr(self, name, amount=1):
         raise NotImplementedError('Operation not supported with msgpack serializer')

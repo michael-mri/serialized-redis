@@ -1,13 +1,9 @@
 import datetime
-import pytest
 
-from redis import exceptions
-from redis._compat import unichr, u, iteritems, iterkeys, itervalues
+import pytest
 import redis
 
-from serialized_redis import SerializedRedis
-
-from .conftest import skip_if_server_version_lt, skip_if_server_version_gte, _get_client
+from .conftest import skip_if_server_version_lt, skip_if_server_version_gte
 
 
 class TestRedisCommands(object):
@@ -22,12 +18,39 @@ class TestRedisCommands(object):
         del r['a']
         assert r.get('a') is None
 
+    def test_smart_get_and_set(self, r):
+        # get and set can't be tested independently of each other
+        assert r.smart_get('a') is None
+
+        r.smart_set('a', 'str')
+        assert r.smart_get('a') == 'str'
+        assert r.type('a') == 'string'
+
+        r.smart_set('a', 10)
+        assert r.smart_get('a') == 10
+        assert r.type('a') == 'string'
+
+        l = [1, '2', '3']
+        r.smart_set('a', l)
+        assert r.smart_get('a') == l
+        assert r.type('a') == 'list'
+
+        s = set([1, '2', '3'])
+        r.smart_set('a', s)
+        assert r.smart_get('a') == set(s)
+        assert r.type('a') == 'set'
+
+        d = {'a': 1, 'b': '2'}
+        r.smart_set('a', d)
+        assert r.smart_get('a') == d
+        assert r.type('a') == 'hash'
+
     def test_get_and_set(self, r):
         # get and set can't be tested independently of each other
         assert r.get('a') is None
         # byte_string = b('value')
         integer = 5
-        unicode_string = unichr(3456) + u('abcd') + unichr(3421)
+        unicode_string = chr(3456) + 'abcd' + chr(3421)
         obj = {'list': [1, 2, 3, 'four'], 'int_value': 1, 'dict': dict(a='a', b=2), 'strvalue': 'str'}
         # assert r.set('byte_string', byte_string)
         assert r.set('integer', 5)
@@ -35,7 +58,6 @@ class TestRedisCommands(object):
         assert r.set('obj', obj)
         # assert r.get('byte_string') == byte_string
         assert r.get('integer') == integer
-        print(r.get('unicode_string'), unicode_string)
         assert r.get('unicode_string') == unicode_string
         assert r.get('obj') == obj
 
@@ -111,13 +133,16 @@ class TestRedisCommands(object):
     def test_mset(self, r):
         d = {'a': '1', 'b': '2', 'c': 3}
         assert r.mset(d)
-        for k, v in iteritems(d):
+        for k, v in d.items():
             assert r[k] == v
+
+        with pytest.raises(redis.RedisError):
+            r.mset('a', 15)
 
     def test_mset_kwargs(self, r):
         d = {'a': '1', 'b': 2, 'c': '3'}
         assert r.mset(**d)
-        for k, v in iteritems(d):
+        for k, v in d.items():
             assert r[k] == v
 
     def test_msetnx(self, r):
@@ -125,16 +150,19 @@ class TestRedisCommands(object):
         assert r.msetnx(d)
         d2 = {'a': 'x', 'd': '4'}
         assert not r.msetnx(d2)
-        for k, v in iteritems(d):
+        for k, v in d.items():
             assert r[k] == v
         assert r.get('d') is None
+
+        with pytest.raises(redis.RedisError):
+            r.msetnx('a', 15)
 
     def test_msetnx_kwargs(self, r):
         d = {'a': '1', 'b': '2', 'c': '3'}
         assert r.msetnx(**d)
         d2 = {'a': 'x', 'd': '4'}
         assert not r.msetnx(**d2)
-        for k, v in iteritems(d):
+        for k, v in d.items():
             assert r[k] == v
         assert r.get('d') is None
 
@@ -220,9 +248,13 @@ class TestRedisCommands(object):
         assert not r.setnx('a', '2')
         assert r['a'] == '1'
 
+    def test_getrange(self, r):
+        with pytest.raises(NotImplementedError):
+            r.getrange('a', 0, 0)
+
     def test_setrange(self, r):
         with pytest.raises(NotImplementedError):
-            assert r.setrange('a', 5, 'foo') == 8
+            r.setrange('a', 5, 'foo')
 
     def test_type(self, r):
         assert r.type('a') == 'none'
@@ -318,6 +350,10 @@ class TestRedisCommands(object):
         assert r.lrange('a', 0, 2) == ['1', '2', 3]
         assert r.lrange('a', 2, 10) == [3, '4', '5']
         assert r.lrange('a', 0, -1) == ['1', '2', 3, '4', '5']
+
+    def test_lmembers(self, r):
+        r.rpush('a', '1', '2', 3, '4', '5')
+        assert r.lmembers('a') == ['1', '2', 3, '4', '5']
 
     def test_lrem(self, r):
         r.rpush('a', 2, '2', '2', '2')
@@ -553,6 +589,10 @@ class TestRedisCommands(object):
         assert r.zincrby('a', 'a3', amount=5) == 8.0
         assert r.zscore('a', 'a2') == 3.0
         assert r.zscore('a', 'a3') == 8.0
+
+    def test_zmembers(self, r):
+        r.zadd('a', 1, 1, a2=2, a3=3)
+        assert r.zmembers('a') == [1, 'a2', 'a3']
 
     @skip_if_server_version_lt('2.8.9')
     def test_zlexcount(self, r):
@@ -845,7 +885,7 @@ class TestRedisCommands(object):
     def test_hkeys(self, r):
         h = {'a1': '1', 'a2': 2, 'a3': '3'}
         r.hmset('a', h)
-        local_keys = list(iterkeys(h))
+        local_keys = list(h.keys())
         remote_keys = r.hkeys('a')
         assert (sorted(local_keys) == sorted(remote_keys))
 
@@ -872,7 +912,7 @@ class TestRedisCommands(object):
     def test_hvals(self, r):
         h = {'a1': '1', 'a2': '2', 'a3': '3'}
         r.hmset('a', h)
-        local_vals = list(itervalues(h))
+        local_vals = list(h.values())
         remote_vals = r.hvals('a')
         assert sorted(local_vals) == sorted(remote_vals)
 
@@ -931,7 +971,7 @@ class TestRedisCommands(object):
         r['user:2'] = 'u2'
         r['user:3'] = 'u3'
         r.rpush('a', '2', '3', '1')
-        with pytest.raises(exceptions.DataError):
+        with pytest.raises(redis.DataError):
             r.sort('a', get='user:*', groups=True)
 
     def test_sort_groups_just_one_get(self, r):
@@ -939,7 +979,7 @@ class TestRedisCommands(object):
         r['user:2'] = 'u2'
         r['user:3'] = 'u3'
         r.rpush('a', '2', '3', '1')
-        with pytest.raises(exceptions.DataError):
+        with pytest.raises(redis.DataError):
             r.sort('a', get=['user:*'], groups=True)
 
     def test_sort_groups_no_get(self, r):
@@ -947,7 +987,7 @@ class TestRedisCommands(object):
         r['user:2'] = 'u2'
         r['user:3'] = 'u3'
         r.rpush('a', '2', '3', '1')
-        with pytest.raises(exceptions.DataError):
+        with pytest.raises(redis.DataError):
             r.sort('a', groups=True)
 
     def test_sort_groups_three_gets(self, r):
@@ -1069,7 +1109,7 @@ class TestRedisCommands(object):
 
     @skip_if_server_version_lt('3.2.0')
     def test_geoadd_invalid_params(self, r):
-        with pytest.raises(exceptions.RedisError):
+        with pytest.raises(redis.RedisError):
             r.geoadd('barcelona', *(1, 2))
 
     @skip_if_server_version_lt('3.2.0')
@@ -1090,7 +1130,7 @@ class TestRedisCommands(object):
 
     @skip_if_server_version_lt('3.2.0')
     def test_geodist_invalid_units(self, r):
-        with pytest.raises(exceptions.RedisError):
+        with pytest.raises(redis.RedisError):
             assert r.geodist('x', 'y', 'z', 'inches')
 
     @skip_if_server_version_lt('3.2.0')
