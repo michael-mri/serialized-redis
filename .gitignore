@@ -6,6 +6,7 @@ __pycache__
 .coverage
 cover/
 serialized_redis_interface.egg-info
+.eggs
 build/
 dist/
 
