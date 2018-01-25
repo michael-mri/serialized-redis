@@ -107,11 +107,11 @@ class SerializedRedis(redis.StrictRedis):
 
     def smart_get(self, name):
         '''
-        Smart get: like get but smarter, returns good type:
-            if redis hash, returns python dict
-            if redis array, returns python array
-            if redis set, return python set
-            if redis string, returns python string
+        Returns python type corresponding to redis type:
+            if redis hash, returns python dict with values deserialized
+            if redis array, returns python array with members deserialized
+            if redis set, return python set with members deserialized
+            if redis string, returns a python object from deserialization
         '''
         if not self.exists(name):
             return None
@@ -124,7 +124,7 @@ class SerializedRedis(redis.StrictRedis):
 
     def smart_set(self, name, value):
         '''
-        Smart set: like set but smarter, sets good type:
+        Saves value using appropriate Redis type:
             if python dict, uses redis hash
             if python array, uses redis array
             if python set, uses redis set
@@ -176,24 +176,40 @@ class SerializedRedis(redis.StrictRedis):
         return set(super().smembers(*args, **kwargs))
 
     def smembers_as_list(self, *args, **kwargs):
+        """
+        Returns SMEMBERS as python list instead of set.
+        To be used when deserialized members may not hashable.
+        """
         return super().smembers(*args, **kwargs)
 
     def sdiff(self, *args, **kwargs):
         return set(super().sdiff(*args, **kwargs))
 
     def sdiff_as_list(self, *args, **kwargs):
+        """
+        Returns SDIFF as python list instead of set.
+        To be used when deserialized members may not hashable.
+        """
         return super().sdiff(*args, **kwargs)
 
     def sinter(self, *args, **kwargs):
         return set(super().sinter(*args, **kwargs))
 
     def sinter_as_list(self, *args, **kwargs):
+        """
+        Returns SINTER as python list instead of set.
+        To be used when deserialized members may not hashable.
+        """
         return super().sinter(*args, **kwargs)
 
     def sunion(self, *args, **kwargs):
         return set(super().sunion(*args, **kwargs))
 
     def sunion_as_list(self, *args, **kwargs):
+        """
+        Returns SUNION as python list instead of set.
+        To be used when deserialized members may not hashable.
+        """
         return super().sunion(*args, **kwargs)
 
     def smove(self, src, dst, value):
