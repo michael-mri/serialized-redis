@@ -3,7 +3,7 @@ from json import JSONEncoder, JSONDecoder
 from redis.client import string_keys_to_dict, dict_merge
 import redis
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 VERSION = tuple(map(int, __version__.split('.')))
 
 
