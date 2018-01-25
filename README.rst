@@ -1,5 +1,5 @@
 serialized-redis
-========
+================
 
 Redis python interface that serializes all values using json, pickle, msgpack or a custom serializer.
 
@@ -28,6 +28,7 @@ Getting Started
     {'test': 'dict'}
 
 serialized-redis extends `redis-py <https://github.com/andymccurdy/redis-py>`_ and uses the same interface.
+Most commands, Piplines and PubSub are supported and takes care of serializing and deserializing values.
 
 Limitations
 -----------
@@ -36,7 +37,9 @@ As values are serialized, Redis operations that manipulate or extract data from 
 
 * SORT commands may not return correct order depending on the serializer used.
 * ZSCAN and SSCAN MATCH option will only work for exact match.
+* STRLENGTH and HSTRLENGTH will return the length of the serialized value.
 * all lexicographical commands like ZLEXCOUNT, ZREMRANGEBYLEX and ZREVRANGEBYLEX are not supported
 * INCR is only supported with JSON serializer
+* fields of Redis hashes are not serialized
 
 
