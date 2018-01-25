@@ -3,6 +3,9 @@ serialized-redis
 
 Redis python interface that serializes all values using json, pickle, msgpack or a custom serializer.
 
+.. image:: https://secure.travis-ci.org/michael-mri/serialized-redis.svg?branch=master
+        :target: http://travis-ci.org/michael-mri/serialized-redis
+
 Getting Started
 ---------------
 
