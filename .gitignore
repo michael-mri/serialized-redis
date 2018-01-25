@@ -9,4 +9,4 @@ serialized_redis_interface.egg-info
 .eggs
 build/
 dist/
-
+Pipfile

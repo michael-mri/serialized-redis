@@ -20,8 +20,8 @@ class SerializedRedis(redis.StrictRedis):
         # Chain response callbacks to deserialize output
         FROM_SERIALIZED_CALLBACKS = dict_merge(
                 string_keys_to_dict('KEYS TYPE SCAN HKEYS', self.decode),
-                string_keys_to_dict('GET GETSET HGET LPOP RPOPLPUSH BRPOPLPUSH LINDEX SPOP', self.parse_single_object),
-                string_keys_to_dict('MGET HVALS HMGET LRANGE SRANDMEMBER', self.parse_list),
+                string_keys_to_dict('MGET HVALS HMGET LRANGE SRANDMEMBER GET GETSET HGET LPOP '
+                                    'RPOPLPUSH BRPOPLPUSH LINDEX SPOP', self.parse_list),
                 string_keys_to_dict('SMEMBERS SDIFF SINTER SUNION', self.parse_set),
                 string_keys_to_dict('HGETALL', self.parse_hgetall),
                 string_keys_to_dict('HSCAN', self.parse_hscan),
@@ -40,6 +40,10 @@ class SerializedRedis(redis.StrictRedis):
                 self.response_callbacks[cmd] = chain_functions(self.response_callbacks[cmd], FROM_SERIALIZED_CALLBACKS[cmd])
             else:
                 self.response_callbacks[cmd] = FROM_SERIALIZED_CALLBACKS[cmd]
+        
+        # For the following we call first our callback as the redis-py callback returns nativestr, which may no be what we want
+        for cmd in 'GEORADIUS', 'GEORADIUSBYMEMBER':
+            self.response_callbacks[cmd] = chain_functions(self.parse_georadius, self.response_callbacks[cmd])
 
     def serialize(self, value):
         return self.serialize_fn(value)
@@ -60,9 +64,6 @@ class SerializedRedis(redis.StrictRedis):
         elif isinstance(value, dict):
             return {k:self.decode(v) for k, v in value.items()}
         return value
-
-    def parse_single_object(self, response, **options):
-        return self.deserialize(response)
 
     def set(self, name, value, *args, **kwargs):
         return super().set(name, self.serialize(value), *args, **kwargs)
@@ -147,6 +148,27 @@ class SerializedRedis(redis.StrictRedis):
     # Hashes: fields can be objects
     def parse_hgetall(self, response, **options):
         return { self.decode(k): self.deserialize(v) for k, v in response.items() }
+
+    def parse_georadius(self, response, **options):
+        if options['store'] or options['store_dist']:
+            # `store` and `store_diff` cant be combined
+            # with other command arguments.
+            return response
+    
+        if type(response) != list:
+            response_list = [response]
+        else:
+            response_list = response
+        
+        if not options['withdist'] and not options['withcoord']\
+                and not options['withhash']:
+            print('respos', response, response_list)
+            return [self.deserialize(r) for r in response_list]
+
+        for r in response_list:
+            r[0] = self.deserialize(r[0])
+        
+        return response_list
 
     def parse_hscan(self, response, **options):
         cursor, dic = response
@@ -322,7 +344,31 @@ class SerializedRedis(redis.StrictRedis):
         if data == None:
             return None
         return self.deserialize(data)
-
+    
+    def geoadd(self, name, *values):
+        serialized_values = []
+        for i, v in enumerate(values):
+            if i % 3 == 2:
+                v = self.serialize(v)
+            serialized_values.append(v)
+        
+        return super().geoadd(name, *serialized_values)
+    
+    def geopos(self, name, *values):
+        return super().geopos(name, *(self.serialize(v) for v in values))
+    
+    def georadiusbymember(self, name, member, radius, unit=None, 
+                          withdist=False, withcoord=False, withhash=False, 
+                          count=None, sort=None, store=None, store_dist=None):
+        return super().georadiusbymember(name, self.serialize(member), radius, unit=unit, withdist=withdist,
+                                         withcoord=withcoord, withhash=withhash, count=count, sort=sort,
+                                         store=store, store_dist=store_dist)
+    def geodist(self, name, place1, place2, unit=None):
+        return super().geodist(name, self.serialize(place1), self.serialize(place2), unit=unit)
+    
+    def geohash(self, name, *values):
+        return super().geohash(name, *(self.serialize(v) for v in values))
+    
     def publish(self, channel, msg):
         return super().publish(channel, self.serialize(msg))
 
