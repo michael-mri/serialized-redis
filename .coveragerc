@@ -2,9 +2,3 @@
 branch = True
 source =
     .
-
-[html]
-directory = cover/py
-
-[xml]
-output = cover/py.xml

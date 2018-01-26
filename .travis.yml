@@ -1,3 +1,6 @@
+env:
+  global:
+    - CC_TEST_REPORTER_ID=5d68c174dc171860a8fc0f0a2927341bff177b8bc4e90873ab3cda977df87140
 language: python
 cache: pip
 python:
@@ -8,4 +11,10 @@ python:
 install: pip install -e .
 services:
   - redis-server
+before_script:
+  - curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./cc-test-reporter
+  - chmod +x ./cc-test-reporter
+  - ./cc-test-reporter before-build
 script: python setup.py test
+after_script:
+  - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT

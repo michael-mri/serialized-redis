@@ -12,7 +12,7 @@ try:
 
         def finalize_options(self):
             TestCommand.finalize_options(self)
-            self.test_args = []
+            self.test_args = ['--cov', '--cov-report', 'xml']
             self.test_suite = True
 
         def run_tests(self):
@@ -70,6 +70,7 @@ setup(
     tests_require=[
         'mock',
         'pytest>=2.5.0',
+        'pytest-cov',
         'msgpack',
     ],
     cmdclass={'test': PyTest},

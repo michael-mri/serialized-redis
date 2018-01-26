@@ -4,9 +4,9 @@
 __pycache__
 *.pyc
 .coverage
-cover/
+coverage.xml
 serialized_redis_interface.egg-info
 .eggs
 build/
 dist/
-Pipfile
+
