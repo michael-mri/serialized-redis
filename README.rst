@@ -6,6 +6,9 @@ Redis python interface that serializes all values using json, pickle, msgpack or
 .. image:: https://secure.travis-ci.org/michael-mri/serialized-redis.svg?branch=master
         :target: http://travis-ci.org/michael-mri/serialized-redis
 
+.. image:: https://codecov.io/gh/michael-mri/serialized-redis/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/michael-mri/serialized-redis
+
 Getting Started
 ---------------
 
