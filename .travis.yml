@@ -18,3 +18,5 @@ before_script:
 script: python setup.py test
 after_script:
   - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT
+  - pip install codecov
+  - codecov
