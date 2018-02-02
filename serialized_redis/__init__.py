@@ -1,4 +1,5 @@
 from json import JSONEncoder, JSONDecoder
+import functools
 
 from redis.client import string_keys_to_dict, dict_merge
 import redis
@@ -40,7 +41,7 @@ class SerializedRedis(redis.StrictRedis):
                 self.response_callbacks[cmd] = chain_functions(self.response_callbacks[cmd], FROM_SERIALIZED_CALLBACKS[cmd])
             else:
                 self.response_callbacks[cmd] = FROM_SERIALIZED_CALLBACKS[cmd]
-        
+
         # For the following we call first our callback as the redis-py callback returns nativestr, which may no be what we want
         for cmd in 'GEORADIUS', 'GEORADIUSBYMEMBER':
             self.response_callbacks[cmd] = chain_functions(self.parse_georadius, self.response_callbacks[cmd])
@@ -110,7 +111,8 @@ class SerializedRedis(redis.StrictRedis):
         Returns python type corresponding to redis type:
             if redis hash, returns python dict with values deserialized
             if redis array, returns python array with members deserialized
-            if redis set, return python set with members deserialized
+            if redis set, returns python set with members deserialized
+            if redis sorted set, returns a list
             if redis string, returns a python object from deserialization
         '''
         if not self.exists(name):
@@ -120,15 +122,16 @@ class SerializedRedis(redis.StrictRedis):
                     'hash': self.hgetall,
                     'string': self.get,
                     'list': self.lmembers,
+                    'zset': self.zmembers,
                 }[self.type(name)](name)
 
     def smart_set(self, name, value):
         '''
         Saves value using appropriate Redis type:
-            if python dict, uses redis hash
-            if python array, uses redis array
-            if python set, uses redis set
-            otherwise uses redis string
+            if python dict, uses redis hash, serializing values (not keys)
+            if python list, uses redis array, serializing members
+            if python set, uses redis set, serializing members
+            otherwise uses redis string, serializing ``value``
         '''
         with self.pipeline() as pipe:
             pipe.delete(name)
@@ -154,12 +157,12 @@ class SerializedRedis(redis.StrictRedis):
             # `store` and `store_diff` cant be combined
             # with other command arguments.
             return response
-    
+
         if type(response) != list:
             response_list = [response]
         else:
             response_list = response
-        
+
         if not options['withdist'] and not options['withcoord']\
                 and not options['withhash']:
             print('respos', response, response_list)
@@ -167,7 +170,7 @@ class SerializedRedis(redis.StrictRedis):
 
         for r in response_list:
             r[0] = self.deserialize(r[0])
-        
+
         return response_list
 
     def parse_hscan(self, response, **options):
@@ -266,8 +269,12 @@ class SerializedRedis(redis.StrictRedis):
     def zrem(self, name, *args):
         return super().zrem(name, *list(self.serialize(v) for v in args))
 
-    def zmembers(self, name):
-        return self.zrange(name, 0, -1)
+    def zmembers(self, name, **kwargs):
+        '''
+        returns all members of Sorted Set.
+        convenience function for zrange(name, 0, -1)
+        '''
+        return self.zrange(name, 0, -1, **kwargs)
 
     def zscore(self, name, value):
         return super().zscore(name, self.serialize(value))
@@ -309,6 +316,10 @@ class SerializedRedis(redis.StrictRedis):
 
     # Lists
     def lmembers(self, name):
+        '''
+        Returns list of all members of list ``name``.
+        Convenience function for lrange(name, 0, -1).
+        '''
         return self.lrange(name, 0, -1)
 
     def parse_list(self, response, **options):
@@ -344,31 +355,32 @@ class SerializedRedis(redis.StrictRedis):
         if data == None:
             return None
         return self.deserialize(data)
-    
+
     def geoadd(self, name, *values):
         serialized_values = []
         for i, v in enumerate(values):
             if i % 3 == 2:
                 v = self.serialize(v)
             serialized_values.append(v)
-        
+
         return super().geoadd(name, *serialized_values)
-    
+
     def geopos(self, name, *values):
         return super().geopos(name, *(self.serialize(v) for v in values))
-    
-    def georadiusbymember(self, name, member, radius, unit=None, 
-                          withdist=False, withcoord=False, withhash=False, 
+
+    def georadiusbymember(self, name, member, radius, unit=None,
+                          withdist=False, withcoord=False, withhash=False,
                           count=None, sort=None, store=None, store_dist=None):
         return super().georadiusbymember(name, self.serialize(member), radius, unit=unit, withdist=withdist,
                                          withcoord=withcoord, withhash=withhash, count=count, sort=sort,
                                          store=store, store_dist=store_dist)
+
     def geodist(self, name, place1, place2, unit=None):
         return super().geodist(name, self.serialize(place1), self.serialize(place2), unit=unit)
-    
+
     def geohash(self, name, *values):
         return super().geohash(name, *(self.serialize(v) for v in values))
-    
+
     def publish(self, channel, msg):
         return super().publish(channel, self.serialize(msg))
 
@@ -473,7 +485,6 @@ class MsgpackSerializedRedis(SerializedRedis):
 
     def __init__(self, *args, **kwargs):
         import msgpack
-        import functools
         deserialize_fct = functools.partial(msgpack.unpackb, encoding='utf-8')
         super().__init__(*args, serialize_fn=msgpack.dumps, deserialize_fn=deserialize_fct, **kwargs)
 
