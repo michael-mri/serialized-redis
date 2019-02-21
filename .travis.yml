@@ -3,6 +3,7 @@ env:
     - CC_TEST_REPORTER_ID=5d68c174dc171860a8fc0f0a2927341bff177b8bc4e90873ab3cda977df87140
 language: python
 cache: pip
+dist: xenial
 python:
   - "3.7"
   - "3.6"
