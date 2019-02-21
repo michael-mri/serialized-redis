@@ -4,7 +4,7 @@ from json import JSONEncoder, JSONDecoder
 import redis
 from redis.client import string_keys_to_dict, dict_merge
 
-__version__ = '0.3.0-dev'
+__version__ = '0.3.0'
 
 
 class SerializedRedis(redis.Redis):
