@@ -63,7 +63,7 @@ setup(
     license='MIT',
     packages=['serialized_redis'],
     python_requires='>=3',
-    install_requires=['redis'],
+    install_requires=['redis>3'],
     extras_require={
         'msgpack': ['msgpack'],
     },
