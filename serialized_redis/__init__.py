@@ -483,7 +483,7 @@ class MsgpackSerializedRedis(SerializedRedis):
 
     def __init__(self, *args, **kwargs):
         import msgpack
-        deserialize_fct = functools.partial(msgpack.unpackb, encoding='utf-8')
+        deserialize_fct = functools.partial(msgpack.unpackb, raw=False)
         super().__init__(*args, serialize_fn=msgpack.dumps, deserialize_fn=deserialize_fct, **kwargs)
 
     def incrby(self, name, amount=1):
