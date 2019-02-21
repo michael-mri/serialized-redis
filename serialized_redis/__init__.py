@@ -1,13 +1,13 @@
-from json import JSONEncoder, JSONDecoder
 import functools
+from json import JSONEncoder, JSONDecoder
 
-from redis.client import string_keys_to_dict, dict_merge
 import redis
+from redis.client import string_keys_to_dict, dict_merge
 
 __version__ = '0.3.0-dev'
 
 
-class SerializedRedis(redis.StrictRedis):
+class SerializedRedis(redis.Redis):
     '''
         Wrapper to Redis that De/Serializes all values.
     '''
@@ -63,7 +63,7 @@ class SerializedRedis(redis.StrictRedis):
         elif isinstance(value, tuple):
             return tuple(self.decode(v) for v in value)
         elif isinstance(value, dict):
-            return {k:self.decode(v) for k, v in value.items()}
+            return {k: self.decode(v) for k, v in value.items()}
         return value
 
     def set(self, name, value, *args, **kwargs):
@@ -84,21 +84,11 @@ class SerializedRedis(redis.StrictRedis):
     def getset(self, name, value, *args, **kwargs):
         return super().getset(name, self.serialize(value), *args, **kwargs)
 
-    def mset(self, *args, **kwargs):
-        if args:
-            if len(args) != 1 or not isinstance(args[0], dict):
-                raise redis.RedisError('MSET requires **kwargs or a single dict arg')
-            kwargs.update(args[0])
+    def mset(self, mapping):
+        return super().mset({k: self.serialize(v) for k, v in mapping.items()})
 
-        return super().mset(**{k: self.serialize(v) for k, v in kwargs.items()})
-
-    def msetnx(self, *args, **kwargs):
-        if args:
-            if len(args) != 1 or not isinstance(args[0], dict):
-                raise redis.RedisError('MSETNX requires **kwargs or a single dict arg')
-            kwargs.update(args[0])
-
-        return super().msetnx(**{k: self.serialize(v) for k, v in kwargs.items()})
+    def msetnx(self, mapping):
+        return super().msetnx({k: self.serialize(v) for k, v in mapping.items()})
 
     def psetex(self, name, time_ms, value):
         return super().psetex(name, time_ms, self.serialize(value))
@@ -247,18 +237,12 @@ class SerializedRedis(redis.StrictRedis):
         return [self.deserialize(v) for v in response]
 
     # ordered sets
-    def zadd(self, name, *args, **kwargs):
-        serialized_args = []
+    def zadd(self, name, mapping, **kwargs):
+        serialized_mapping = {}
 
-        a = iter(args)
-        for score, value in zip(a, a):
-            serialized_args.append(score)
-            serialized_args.append(self.serialize(value))
-        for value, score in kwargs.items():
-            # Once serialized key may not be a str anymore
-            serialized_args.append(score)
-            serialized_args.append(self.serialize(value))
-        return super().zadd(name, *serialized_args)
+        for value, score in mapping.items():
+            serialized_mapping[self.serialize(value)] = score
+        return super().zadd(name, serialized_mapping, **kwargs)
 
     def zrank(self, name, value):
         return super().zrank(name, self.serialize(value))
@@ -279,19 +263,33 @@ class SerializedRedis(redis.StrictRedis):
     def zscore(self, name, value):
         return super().zscore(name, self.serialize(value))
 
-    def zscan(self, name, cursor=0, match=None, count=None, score_cast_func=float):
+    def zscan(self, name, cursor=0, match=None, count=None,
+              score_cast_func=float):
         # Only support exact match.
         if match is not None:
             match = self.serialize(match)
-        return super().zscan(name, cursor=cursor, match=match, count=count, score_cast_func=score_cast_func)
+        return super().zscan(name, cursor=cursor, match=match, count=count,
+                             score_cast_func=score_cast_func)
+
+    zlexcount = None
+    "Not Supported"
+
+    zrangebylex = None
+    "Not Supported"
+
+    zrevrangebylex = None
+    "Not Supported"
+
+    zremrangebylex = None
+    "Not Supported"
 
     def sscan(self, name, cursor=0, match=None, count=None):
         if match is not None:
             match = self.serialize(match)
         return super().sscan(name, cursor=cursor, match=match, count=count)
 
-    def zincrby(self, name, value, amount=1):
-        return super().zincrby(name, self.serialize(value), amount=amount)
+    def zincrby(self, name, amount, value):
+        return super().zincrby(name, amount, self.serialize(value))
 
     def parse_zrange(self, response, **options):
         if options.get('withscores', False):
@@ -308,7 +306,7 @@ class SerializedRedis(redis.StrictRedis):
         return cursor, set(self.deserialize(value) for value in data)
 
     def sort(self, name, start=None, num=None, by=None, get=None,
-        desc=False, alpha=False, store=None, groups=False):
+             desc=False, alpha=False, store=None, groups=False):
         response = super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=alpha, store=store, groups=groups)
         if store is None:
             return self.parse_list(response)
@@ -390,7 +388,7 @@ class SerializedRedis(redis.StrictRedis):
         # create a Pipeline class based on our class and provide our serialize function
         # deserialize not required as it is called only form response_callbacks which
         # refer to current SerializedRedis instance
-        class SerializedRedisPipeline(redis.client.BasePipeline, type(self)):
+        class SerializedRedisPipeline(redis.client.Pipeline, type(self)):
             "Pipeline for the SerializedRedis class"
 
             def serialize_fn(self, value):
@@ -464,7 +462,7 @@ class PickleSerializedRedis(SerializedRedis):
         import pickle
         super().__init__(*args, serialize_fn=pickle.dumps, deserialize_fn=pickle.loads, **kwargs)
 
-    def incr(self, name, amount=1):
+    def incrby(self, name, amount=1):
         raise NotImplementedError('Operation not supported with pickle serializer')
 
     def incrbyfloat(self, name, amount=1.0):
@@ -485,17 +483,17 @@ class MsgpackSerializedRedis(SerializedRedis):
 
     def __init__(self, *args, **kwargs):
         import msgpack
-        deserialize_fct = functools.partial(msgpack.unpackb, encoding='utf-8')
+        deserialize_fct = functools.partial(msgpack.unpackb, raw=False)
         super().__init__(*args, serialize_fn=msgpack.dumps, deserialize_fn=deserialize_fct, **kwargs)
 
-    def incr(self, name, amount=1):
+    def incrby(self, name, amount=1):
         raise NotImplementedError('Operation not supported with msgpack serializer')
 
     def incrbyfloat(self, name, amount=1.0):
         raise NotImplementedError('Operation not supported with pickle serializer')
 
     def sort(self, name, start=None, num=None, by=None, get=None,
-        desc=False, alpha=False, store=None, groups=False):
+             desc=False, alpha=False, store=None, groups=False):
         # once pickled aplha order seems respected for numbers but not for pickled strings
         if alpha:
             raise NotImplementedError('Server side string comparison not supported with pickle serializer')
