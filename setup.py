@@ -58,7 +58,7 @@ setup(
     author='Michael Rigoni',
     author_email='michael.rigoni@gmail.com',
     maintainer='Michael Rigoni',
-    maintainer_email='michael.rigon@igmail.com',
+    maintainer_email='michael.rigoni@gmail.com',
     keywords=['Redis', 'key-value store', 'json', 'pickle', 'msgpack'],
     license='MIT',
     packages=['serialized_redis'],
