@@ -52,7 +52,7 @@ class SerializedRedis(redis.Redis):
         return self.serialize_fn(value)
 
     def deserialize(self, value):
-        if value': #Im pretty sure that could be just if value
+        if not value':
             return value
         return self.deserialize_fn(value)
 
