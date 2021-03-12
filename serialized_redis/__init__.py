@@ -5,13 +5,13 @@ from json import JSONDecoder, JSONEncoder
 import redis
 from redis.client import dict_merge, string_keys_to_dict
 
-__version__ = '0.4.1-dev0'
+__version__ = "0.5.0-dev0"
 
 
 class SerializedRedis(redis.Redis):
-    '''
+    """
         Wrapper to Redis that De/Serializes all values.
-    '''
+    """
 
     def __init__(self, *args, serialize_fn, deserialize_fn, **kwargs):
         super().__init__(*args, **kwargs)
@@ -21,32 +21,37 @@ class SerializedRedis(redis.Redis):
 
         # Chain response callbacks to deserialize output
         FROM_SERIALIZED_CALLBACKS = dict_merge(
-            string_keys_to_dict('KEYS TYPE SCAN HKEYS', self.decode),
-            string_keys_to_dict('MGET HVALS HMGET LRANGE SRANDMEMBER GET GETSET HGET LPOP '
-                                'RPOPLPUSH BRPOPLPUSH LINDEX SPOP', self.parse_list),
-            string_keys_to_dict('SMEMBERS SDIFF SINTER SUNION', self.parse_set),
-            string_keys_to_dict('HGETALL', self.parse_hgetall),
-            string_keys_to_dict('HSCAN', self.parse_hscan),
-            string_keys_to_dict('SSCAN', self.parse_sscan),
-            string_keys_to_dict('ZRANGE ZRANGEBYSCORE ZREVRANGE ZREVRANGEBYSCORE', self.parse_zrange),
-            string_keys_to_dict('ZSCAN', self.parse_zscan),
-            string_keys_to_dict('BLPOP BRPOP', self.parse_bpop),
-            {
-                'PUBSUB CHANNELS': self.decode,
-                'PUBSUB NUMSUB': self.decode,
-            },
+            string_keys_to_dict("KEYS TYPE SCAN HKEYS", self.decode),
+            string_keys_to_dict(
+                "MGET HVALS HMGET LRANGE SRANDMEMBER GET GETSET HGET LPOP "
+                "RPOPLPUSH BRPOPLPUSH LINDEX SPOP",
+                self.parse_list,
+            ),
+            string_keys_to_dict("SMEMBERS SDIFF SINTER SUNION", self.parse_set),
+            string_keys_to_dict("HGETALL", self.parse_hgetall),
+            string_keys_to_dict("HSCAN", self.parse_hscan),
+            string_keys_to_dict("SSCAN", self.parse_sscan),
+            string_keys_to_dict(
+                "ZRANGE ZRANGEBYSCORE ZREVRANGE ZREVRANGEBYSCORE", self.parse_zrange
+            ),
+            string_keys_to_dict("ZSCAN", self.parse_zscan),
+            string_keys_to_dict("BLPOP BRPOP", self.parse_bpop),
+            {"PUBSUB CHANNELS": self.decode, "PUBSUB NUMSUB": self.decode,},
         )
 
         for cmd in FROM_SERIALIZED_CALLBACKS:
             if cmd in self.response_callbacks:
-                self.response_callbacks[cmd] = chain_functions(self.response_callbacks[cmd],
-                                                               FROM_SERIALIZED_CALLBACKS[cmd])
+                self.response_callbacks[cmd] = chain_functions(
+                    self.response_callbacks[cmd], FROM_SERIALIZED_CALLBACKS[cmd]
+                )
             else:
                 self.response_callbacks[cmd] = FROM_SERIALIZED_CALLBACKS[cmd]
 
         # For the following we call first our callback as the redis-py callback returns nativestr, which may no be what we want
-        for cmd in 'GEORADIUS', 'GEORADIUSBYMEMBER':
-            self.response_callbacks[cmd] = chain_functions(self.parse_georadius, self.response_callbacks[cmd])
+        for cmd in "GEORADIUS", "GEORADIUSBYMEMBER":
+            self.response_callbacks[cmd] = chain_functions(
+                self.parse_georadius, self.response_callbacks[cmd]
+            )
 
     def serialize(self, value):
         return self.serialize_fn(value)
@@ -72,10 +77,10 @@ class SerializedRedis(redis.Redis):
         return super().set(name, self.serialize(value), *args, **kwargs)
 
     def getrange(self, *args, **kwargs):
-        raise NotImplementedError('GETRANGE on serialized objects makes no sense.')
+        raise NotImplementedError("GETRANGE on serialized objects makes no sense.")
 
     def setrange(self, *args, **kwargs):
-        raise NotImplementedError('SETRANGE on serialized objects makes no sense.')
+        raise NotImplementedError("SETRANGE on serialized objects makes no sense.")
 
     def setnx(self, name, value, *args, **kwargs):
         return super().setnx(name, self.serialize(value), *args, **kwargs)
@@ -96,35 +101,37 @@ class SerializedRedis(redis.Redis):
         return super().psetex(name, time_ms, self.serialize(value))
 
     def linsert(self, name, where, refvalue, value):
-        return super().linsert(name, where, self.serialize(refvalue), self.serialize(value))
+        return super().linsert(
+            name, where, self.serialize(refvalue), self.serialize(value)
+        )
 
     def smart_get(self, name):
-        '''
+        """
         Returns python type corresponding to redis type:
             if redis hash, returns python dict with values deserialized
             if redis array, returns python array with members deserialized
             if redis set, returns python set with members deserialized
             if redis sorted set, returns a list
             if redis string, returns a python object from deserialization
-        '''
+        """
         if not self.exists(name):
             return None
         return {
-            'set': self.smembers,
-            'hash': self.hgetall,
-            'string': self.get,
-            'list': self.lmembers,
-            'zset': self.zmembers,
+            "set": self.smembers,
+            "hash": self.hgetall,
+            "string": self.get,
+            "list": self.lmembers,
+            "zset": self.zmembers,
         }[self.type(name)](name)
 
     def smart_set(self, name, value):
-        '''
+        """
         Saves value using appropriate Redis type:
             if python dict, uses redis hash, serializing values (not keys)
             if python list, uses redis array, serializing members
             if python set, uses redis set, serializing members
             otherwise uses redis string, serializing ``value``
-        '''
+        """
         with self.pipeline() as pipe:
             pipe.delete(name)
 
@@ -145,7 +152,7 @@ class SerializedRedis(redis.Redis):
         return {self.decode(k): self.deserialize(v) for k, v in response.items()}
 
     def parse_georadius(self, response, **options):
-        if options['store'] or options['store_dist']:
+        if options["store"] or options["store_dist"]:
             # `store` and `store_diff` cant be combined
             # with other command arguments.
             return response
@@ -155,9 +162,12 @@ class SerializedRedis(redis.Redis):
         else:
             response_list = response
 
-        if not options['withdist'] and not options['withcoord'] \
-                and not options['withhash']:
-            print('respos', response, response_list)
+        if (
+            not options["withdist"]
+            and not options["withcoord"]
+            and not options["withhash"]
+        ):
+            print("respos", response, response_list)
             return [self.deserialize(r) for r in response_list]
 
         for r in response_list:
@@ -176,7 +186,9 @@ class SerializedRedis(redis.Redis):
         return super().hsetnx(name, field, self.serialize(value))
 
     def hmset(self, name, mapping):
-        return super().hmset(name, {field: self.serialize(value) for field, value in mapping.items()})
+        return super().hmset(
+            name, {field: self.serialize(value) for field, value in mapping.items()}
+        )
 
     # Sets
     def sismember(self, name, value):
@@ -232,10 +244,10 @@ class SerializedRedis(redis.Redis):
         return super().smove(src, dst, self.serialize(value))
 
     def parse_set(self, response, **options):
-        '''
+        """
         returns list as members may not be hashable, smember, sdiff fct will turn in into set.
         caller should call smembers/sdiff_as_list if it is known that members may be unhashable and deal with a list instead of a set
-        '''
+        """
         return [self.deserialize(v) for v in response]
 
     # ordered sets
@@ -256,22 +268,26 @@ class SerializedRedis(redis.Redis):
         return super().zrem(name, *list(self.serialize(v) for v in args))
 
     def zmembers(self, name, **kwargs):
-        '''
+        """
         returns all members of Sorted Set.
         convenience function for zrange(name, 0, -1)
-        '''
+        """
         return self.zrange(name, 0, -1, **kwargs)
 
     def zscore(self, name, value):
         return super().zscore(name, self.serialize(value))
 
-    def zscan(self, name, cursor=0, match=None, count=None,
-              score_cast_func=float):
+    def zscan(self, name, cursor=0, match=None, count=None, score_cast_func=float):
         # Only support exact match.
         if match is not None:
             match = self.serialize(match)
-        return super().zscan(name, cursor=cursor, match=match, count=count,
-                             score_cast_func=score_cast_func)
+        return super().zscan(
+            name,
+            cursor=cursor,
+            match=match,
+            count=count,
+            score_cast_func=score_cast_func,
+        )
 
     zlexcount = None
     "Not Supported"
@@ -294,7 +310,7 @@ class SerializedRedis(redis.Redis):
         return super().zincrby(name, amount, self.serialize(value))
 
     def parse_zrange(self, response, **options):
-        if options.get('withscores', False):
+        if options.get("withscores", False):
             return [(self.deserialize(v[0]), v[1]) for v in response]
         else:
             return [self.deserialize(v) for v in response]
@@ -307,20 +323,39 @@ class SerializedRedis(redis.Redis):
         cursor, data = response
         return cursor, set(self.deserialize(value) for value in data)
 
-    def sort(self, name, start=None, num=None, by=None, get=None,
-             desc=False, alpha=False, store=None, groups=False):
-        response = super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=alpha, store=store,
-                                groups=groups)
+    def sort(
+        self,
+        name,
+        start=None,
+        num=None,
+        by=None,
+        get=None,
+        desc=False,
+        alpha=False,
+        store=None,
+        groups=False,
+    ):
+        response = super().sort(
+            name,
+            start=start,
+            num=num,
+            by=by,
+            get=get,
+            desc=desc,
+            alpha=alpha,
+            store=store,
+            groups=groups,
+        )
         if store is None:
             return self.parse_list(response)
         return response
 
     # Lists
     def lmembers(self, name):
-        '''
+        """
         Returns list of all members of list ``name``.
         Convenience function for lrange(name, 0, -1).
-        '''
+        """
         return self.lrange(name, 0, -1)
 
     def parse_list(self, response, **options):
@@ -369,15 +404,38 @@ class SerializedRedis(redis.Redis):
     def geopos(self, name, *values):
         return super().geopos(name, *(self.serialize(v) for v in values))
 
-    def georadiusbymember(self, name, member, radius, unit=None,
-                          withdist=False, withcoord=False, withhash=False,
-                          count=None, sort=None, store=None, store_dist=None):
-        return super().georadiusbymember(name, self.serialize(member), radius, unit=unit, withdist=withdist,
-                                         withcoord=withcoord, withhash=withhash, count=count, sort=sort,
-                                         store=store, store_dist=store_dist)
+    def georadiusbymember(
+        self,
+        name,
+        member,
+        radius,
+        unit=None,
+        withdist=False,
+        withcoord=False,
+        withhash=False,
+        count=None,
+        sort=None,
+        store=None,
+        store_dist=None,
+    ):
+        return super().georadiusbymember(
+            name,
+            self.serialize(member),
+            radius,
+            unit=unit,
+            withdist=withdist,
+            withcoord=withcoord,
+            withhash=withhash,
+            count=count,
+            sort=sort,
+            store=store,
+            store_dist=store_dist,
+        )
 
     def geodist(self, name, place1, place2, unit=None):
-        return super().geodist(name, self.serialize(place1), self.serialize(place2), unit=unit)
+        return super().geodist(
+            name, self.serialize(place1), self.serialize(place2), unit=unit
+        )
 
     def geohash(self, name, *values):
         return super().geohash(name, *(self.serialize(v) for v in values))
@@ -398,10 +456,7 @@ class SerializedRedis(redis.Redis):
                 return serialize_fn(value)
 
         return SerializedRedisPipeline(
-            self.connection_pool,
-            self.response_callbacks,
-            transaction,
-            shard_hint
+            self.connection_pool, self.response_callbacks, transaction, shard_hint
         )
 
     def pubsub(self, **kwargs):
@@ -409,7 +464,6 @@ class SerializedRedis(redis.Redis):
 
 
 class PubSub(redis.client.PubSub):
-
     def __init__(self, *args, serialized_redis, **kwargs):
         super().__init__(*args, **kwargs)
         self.serialized_redis = serialized_redis
@@ -418,12 +472,14 @@ class PubSub(redis.client.PubSub):
         response[0] = self.serialized_redis.decode(response[0])
         response[1] = self.serialized_redis.decode(response[1])
         response_type = response[0]
-        if response_type == 'pmessage':
+        if response_type == "pmessage":
             response[2] = self.serialized_redis.decode(response[2])
             response[3] = self.serialized_redis.deserialize(response[3])
-        elif response_type == 'message':
+        elif response_type == "message":
             response[2] = self.serialized_redis.deserialize(response[2])
-        return super().handle_message(response, ignore_subscribe_messages=ignore_subscribe_messages)
+        return super().handle_message(
+            response, ignore_subscribe_messages=ignore_subscribe_messages
+        )
 
     def _normalize_keys(self, data):
         # We only treat str...
@@ -441,67 +497,144 @@ def chain_functions(innerFn, *outerFns):
 
 
 class JSONSerializedRedis(SerializedRedis):
-    '''
+    """
     Redis connection that serializes and deserializes all values using json.
 
     dict keys are normalized using sort_keys=True which means in a same dict, keys must be sortable.
-    '''
+    """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, dumps_kwargs=None, loads_kwargs=None, **kwargs):
         import json
-        serialize_fct = json.JSONEncoder(sort_keys=True).encode
-        super().__init__(*args, serialize_fn=serialize_fct, deserialize_fn=json.loads, decode_responses=True, **kwargs)
+
+        if dumps_kwargs is None:
+            dumps_kwargs = {}
+        if loads_kwargs is None:
+            loads_kwargs = {}
+
+        serialize_fn = functools.partial(json.dumps, sort_keys=True, **dumps_kwargs)
+        deserialize_fn = functools.partial(json.loads, **loads_kwargs)
+        super().__init__(
+            *args,
+            serialize_fn=serialize_fn,
+            deserialize_fn=deserialize_fn,
+            decode_responses=True,
+            **kwargs
+        )
 
 
 class PickleSerializedRedis(SerializedRedis):
-    '''
+    """
     Redis connection that serializes and deserializes all values using pickle.
 
     dict keys are normalized using sort_keys=True which means in a same dict, keys must be sortable.
-    '''
+    """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, dumps_kwargs=None, loads_kwargs=None, **kwargs):
         import pickle
-        super().__init__(*args, serialize_fn=pickle.dumps, deserialize_fn=pickle.loads, **kwargs)
+
+        if dumps_kwargs is None:
+            dumps_kwargs = {}
+        if loads_kwargs is None:
+            loads_kwargs = {}
+
+        serialize_fn = functools.partial(pickle.dumps, **dumps_kwargs)
+        deserialize_fn = functools.partial(pickle.loads, **loads_kwargs)
+        super().__init__(
+            *args, serialize_fn=serialize_fn, deserialize_fn=deserialize_fn, **kwargs
+        )
 
     def incrby(self, name, amount=1):
-        raise NotImplementedError('Operation not supported with pickle serializer')
+        raise NotImplementedError("Operation not supported with pickle serializer")
 
     def incrbyfloat(self, name, amount=1.0):
-        raise NotImplementedError('Operation not supported with pickle serializer')
+        raise NotImplementedError("Operation not supported with pickle serializer")
 
-    def sort(self, name, start=None, num=None, by=None, get=None,
-             desc=False, alpha=False, store=None, groups=False):
+    def sort(
+        self,
+        name,
+        start=None,
+        num=None,
+        by=None,
+        get=None,
+        desc=False,
+        alpha=False,
+        store=None,
+        groups=False,
+    ):
         # once pickled aplha order seems respected for numbers but not for pickled strings
         if alpha:
-            raise NotImplementedError('Server side string comparison not supported with pickle serializer')
+            raise NotImplementedError(
+                "Server side string comparison not supported with pickle serializer"
+            )
         if by is not None:
-            raise NotImplementedError('Server side string comparison using weights with pickle serializer')
+            raise NotImplementedError(
+                "Server side string comparison using weights with pickle serializer"
+            )
         # for number comparison, force alpha to True
-        return super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=True, store=store,
-                            groups=groups)
+        return super().sort(
+            name,
+            start=start,
+            num=num,
+            by=by,
+            get=get,
+            desc=desc,
+            alpha=True,
+            store=store,
+            groups=groups,
+        )
 
 
 class MsgpackSerializedRedis(SerializedRedis):
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, packb_kwargs=None, unpackb_kwargs=None, **kwargs):
         import msgpack
-        deserialize_fct = functools.partial(msgpack.unpackb, object_pairs_hook=OrderedDict, raw=False)
-        super().__init__(*args, serialize_fn=msgpack.packb, deserialize_fn=deserialize_fct, **kwargs)
+
+        if packb_kwargs is None:
+            packb_kwargs = {}
+        if unpackb_kwargs is None:
+            unpackb_kwargs = {}
+
+        serialize_fn = functools.partial(msgpack.packb, **packb_kwargs)
+        deserialize_fn = functools.partial(msgpack.unpackb, raw=False, **unpackb_kwargs)
+        super().__init__(
+            *args, serialize_fn=serialize_fn, deserialize_fn=deserialize_fn, **kwargs
+        )
 
     def incrby(self, name, amount=1):
-        raise NotImplementedError('Operation not supported with msgpack serializer')
+        raise NotImplementedError("Operation not supported with msgpack serializer")
 
     def incrbyfloat(self, name, amount=1.0):
-        raise NotImplementedError('Operation not supported with pickle serializer')
+        raise NotImplementedError("Operation not supported with pickle serializer")
 
-    def sort(self, name, start=None, num=None, by=None, get=None,
-             desc=False, alpha=False, store=None, groups=False):
+    def sort(
+        self,
+        name,
+        start=None,
+        num=None,
+        by=None,
+        get=None,
+        desc=False,
+        alpha=False,
+        store=None,
+        groups=False,
+    ):
         # once pickled aplha order seems respected for numbers but not for pickled strings
         if alpha:
-            raise NotImplementedError('Server side string comparison not supported with pickle serializer')
+            raise NotImplementedError(
+                "Server side string comparison not supported with pickle serializer"
+            )
         if by is not None:
-            raise NotImplementedError('Server side string comparison using weights with pickle serializer')
+            raise NotImplementedError(
+                "Server side string comparison using weights with pickle serializer"
+            )
         # for number comparison, force alpha to True
-        return super().sort(name, start=start, num=num, by=by, get=get, desc=desc, alpha=True, store=store,
-                            groups=groups)
+        return super().sort(
+            name,
+            start=start,
+            num=num,
+            by=by,
+            get=get,
+            desc=desc,
+            alpha=True,
+            store=store,
+            groups=groups,
+        )
