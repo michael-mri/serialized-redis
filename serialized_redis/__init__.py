@@ -1,6 +1,4 @@
 import functools
-from collections import OrderedDict
-from json import JSONDecoder, JSONEncoder
 
 import redis
 from redis.client import dict_merge, string_keys_to_dict
@@ -36,7 +34,7 @@ class SerializedRedis(redis.Redis):
             ),
             string_keys_to_dict("ZSCAN", self.parse_zscan),
             string_keys_to_dict("BLPOP BRPOP", self.parse_bpop),
-            {"PUBSUB CHANNELS": self.decode, "PUBSUB NUMSUB": self.decode,},
+            {"PUBSUB CHANNELS": self.decode, "PUBSUB NUMSUB": self.decode},
         )
 
         for cmd in FROM_SERIALIZED_CALLBACKS:
@@ -47,7 +45,8 @@ class SerializedRedis(redis.Redis):
             else:
                 self.response_callbacks[cmd] = FROM_SERIALIZED_CALLBACKS[cmd]
 
-        # For the following we call first our callback as the redis-py callback returns nativestr, which may no be what we want
+        # For the following we call first our callback as the redis-py callback
+        #  returns nativestr, which may no be what we want
         for cmd in "GEORADIUS", "GEORADIUSBYMEMBER":
             self.response_callbacks[cmd] = chain_functions(
                 self.parse_georadius, self.response_callbacks[cmd]
@@ -245,8 +244,10 @@ class SerializedRedis(redis.Redis):
 
     def parse_set(self, response, **options):
         """
-        returns list as members may not be hashable, smember, sdiff fct will turn in into set.
-        caller should call smembers/sdiff_as_list if it is known that members may be unhashable and deal with a list instead of a set
+        returns list as members may not be hashable, smember, sdiff fct will turn it
+        into set.
+        caller should call smembers/sdiff_as_list if it is known that members may be
+        unhashable and deal with a list instead of a set.
         """
         return [self.deserialize(v) for v in response]
 
@@ -376,7 +377,7 @@ class SerializedRedis(redis.Redis):
         return super().lrem(name, count, self.serialize(value))
 
     def parse_bpop(self, response, **options):
-        if response == None:
+        if response is None:
             return None
         return (self.decode(response[0]), self.deserialize(response[1]))
 
@@ -388,7 +389,7 @@ class SerializedRedis(redis.Redis):
 
     def rpop(self, name):
         data = super().rpop(name)
-        if data == None:
+        if data is None:
             return None
         return self.deserialize(data)
 
@@ -500,7 +501,8 @@ class JSONSerializedRedis(SerializedRedis):
     """
     Redis connection that serializes and deserializes all values using json.
 
-    dict keys are normalized using sort_keys=True which means in a same dict, keys must be sortable.
+    dict keys are normalized using sort_keys=True which means in a same dict, keys must
+    be sortable.
     """
 
     def __init__(self, *args, dumps_kwargs=None, loads_kwargs=None, **kwargs):
@@ -526,7 +528,8 @@ class PickleSerializedRedis(SerializedRedis):
     """
     Redis connection that serializes and deserializes all values using pickle.
 
-    dict keys are normalized using sort_keys=True which means in a same dict, keys must be sortable.
+    dict keys are normalized using sort_keys=True which means in a same dict, keys must
+    be sortable.
     """
 
     def __init__(self, *args, dumps_kwargs=None, loads_kwargs=None, **kwargs):
@@ -561,7 +564,8 @@ class PickleSerializedRedis(SerializedRedis):
         store=None,
         groups=False,
     ):
-        # once pickled aplha order seems respected for numbers but not for pickled strings
+        # once pickled aplha order seems respected for numbers but not for pickled
+        # strings
         if alpha:
             raise NotImplementedError(
                 "Server side string comparison not supported with pickle serializer"
@@ -617,7 +621,8 @@ class MsgpackSerializedRedis(SerializedRedis):
         store=None,
         groups=False,
     ):
-        # once pickled aplha order seems respected for numbers but not for pickled strings
+        # once pickled aplha order seems respected for numbers but not for pickled
+        # strings
         if alpha:
             raise NotImplementedError(
                 "Server side string comparison not supported with pickle serializer"
