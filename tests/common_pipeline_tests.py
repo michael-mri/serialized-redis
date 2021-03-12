@@ -22,17 +22,14 @@ class TestPipeline(object):
         with r.pipeline() as pipe:
             # Initially empty.
             assert len(pipe) == 0
-            assert not pipe
 
             # Fill 'er up!
             pipe.set('a', 'a1').set('b', 'b1').set('c', 'c1')
             assert len(pipe) == 3
-            assert pipe
 
             # Execute calls reset(), so empty once again.
             pipe.execute()
             assert len(pipe) == 0
-            assert not pipe
 
     def test_pipeline_no_transaction(self, r):
         with r.pipeline(transaction=False) as pipe:
@@ -105,8 +102,7 @@ class TestPipeline(object):
             pipe.set('a', 1).set('b', 2).lpush('c', 3).set('d', 4)
             with pytest.raises(redis.ResponseError) as ex:
                 pipe.execute()
-            assert str(ex.value).startswith('Command # 3 (LPUSH c ' + str(r.serialize(3)) +
-                                                ') of pipeline caused error: ')
+            assert str(ex.value).startswith('Command # 3 (LPUSH c ')
 
             # make sure the pipe was restored to a working state
             assert pipe.set('z', 'zzz').execute() == [True]
